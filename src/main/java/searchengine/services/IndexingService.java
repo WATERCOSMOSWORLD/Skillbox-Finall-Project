@@ -42,19 +42,19 @@ public class IndexingService {
 
     public void startIndexing() {
         if (isIndexing.compareAndSet(false, true)) {
-            System.out.println("Индексация началась...");
+            System.out.println("[" + LocalDateTime.now() + "] Индексация началась...");
             executorService.submit(() -> {
                 try {
                     performIndexing();
                 } catch (Exception e) {
-                    System.err.println("Ошибка при индексации: " + e.getMessage());
+                    System.err.println("[" + LocalDateTime.now() + "] Ошибка при индексации: " + e.getMessage());
                 } finally {
                     isIndexing.set(false);
-                    System.out.println("Индексация завершена.");
+                    System.out.println("[" + LocalDateTime.now() + "] Индексация завершена.");
                 }
             });
         } else {
-            System.out.println("Индексация уже в процессе.");
+            System.out.println("[" + LocalDateTime.now() + "] Индексация уже в процессе.");
         }
     }
 
@@ -64,23 +64,23 @@ public class IndexingService {
             try {
                 Site site = convertToModelSite(configSite);
 
-                // Удаляем старые данные и получаем количество удаленных записей
                 int deletedPages = deletePages(site);
                 int deletedSites = deleteSite(site);
 
-                // Логируем количество удаленных данных
-                System.out.println("Для сайта " + site.getUrl() + " удалено " + deletedPages + " страниц и " + deletedSites + " записей о сайте.");
+                System.out.println("[" + LocalDateTime.now() + "] Для сайта " + site.getUrl() + " удалено " + deletedPages + " страниц и " + deletedSites + " записей о сайте.");
 
                 site.setStatus(Status.INDEXING);
                 site.setStatusTime(LocalDateTime.now());
                 siteRepository.save(site);
-                System.out.println("Сайт с URL " + site.getUrl() + " начал индексацию.");
+                System.out.println("[" + LocalDateTime.now() + "] Сайт с URL " + site.getUrl() + " начал индексацию.");
+
+                updateSiteStatusTime(site);
 
                 crawlSiteAndSavePages(site);
 
-                System.out.println("Страницы для сайта " + site.getUrl() + " добавлены в базу данных.");
+                System.out.println("[" + LocalDateTime.now() + "] Страницы для сайта " + site.getUrl() + " добавлены в базу данных.");
             } catch (Exception e) {
-                System.err.println("Ошибка при индексации сайта " + configSite.getUrl() + ": " + e.getMessage());
+                System.err.println("[" + LocalDateTime.now() + "] Ошибка при индексации сайта " + configSite.getUrl() + ": " + e.getMessage());
                 e.printStackTrace();
             }
         }
@@ -95,28 +95,22 @@ public class IndexingService {
 
     @Transactional
     private int deletePages(Site site) {
-        // Get the count of Pages before deletion
         int countBeforeDelete = pageRepository.countBySiteUrl(site.getUrl());
-
-        // Perform the deletion
         pageRepository.deleteBySiteUrl(site.getUrl());
-
-        // Return the count of deleted Pages
         return countBeforeDelete;
     }
 
     @Transactional
     private int deleteSite(Site site) {
-        // Get the count of Sites before deletion
         int countBeforeDelete = siteRepository.countByUrl(site.getUrl());
-
-        // Perform the deletion
         siteRepository.deleteByUrl(site.getUrl());
-
-        // Return the count of deleted Sites
         return countBeforeDelete;
     }
 
+    @Transactional
+    private void updateSiteStatusTime(Site site) {
+        siteRepository.updateStatusByUrl(site.getUrl(), site.getStatus(), LocalDateTime.now());
+    }
 
     private void crawlSiteAndSavePages(Site site) {
         Set<String> visitedUrls = new HashSet<>();
@@ -132,14 +126,22 @@ public class IndexingService {
             Document doc = Jsoup.connect(url).get();
             visitedUrls.add(url);
 
-            Page page = new Page();
-            page.setSite(site);
-            page.setPath(url);
-            page.setCode(200);
-            page.setContent(doc.html());
-            pageRepository.save(page);
+            // Проверка типа контента (работаем только с текстовыми страницами)
+            String contentType = Jsoup.connect(url).execute().contentType();
+            if (contentType == null || contentType.startsWith("text/") || contentType.startsWith("application/xml") || contentType.startsWith("application/*+xml")) {
+                Page page = new Page();
+                page.setSite(site);
+                page.setPath(url);
+                page.setCode(200);
+                page.setContent(doc.html());
+                pageRepository.save(page);
+                System.out.println("Страница " + url + " сохранена.");
+            } else {
+                System.out.println("Пропущена страница " + url + " с неподдерживаемым типом содержимого: " + contentType);
+            }
 
-            System.out.println("Страница " + url + " сохранена.");
+            // Обновляем статус времени после каждого обхода страницы
+            updateSiteStatusTime(site);
 
             for (Element link : doc.select("a[href]")) {
                 String nextUrl = link.absUrl("href");
@@ -154,6 +156,7 @@ public class IndexingService {
             System.err.println("Ошибка при обработке страницы " + url + ": " + e.getMessage());
         }
     }
+
 
     private void processMediaFiles(Document doc, Site site) {
         for (Element img : doc.select("img[src]")) {
@@ -185,13 +188,13 @@ public class IndexingService {
                 mediaPage.setSite(site);
                 mediaPage.setPath(fileUrl);
                 mediaPage.setCode(200);
-                mediaPage.setContent(""); // Пустое содержимое для медиафайлов
+                mediaPage.setContent("");
                 pageRepository.save(mediaPage);
 
-                System.out.println(fileType.toUpperCase() + " файл " + fileUrl + " сохранен.");
+                System.out.println("[" + LocalDateTime.now() + "] " + fileType.toUpperCase() + " файл " + fileUrl + " сохранен.");
             }
         } catch (Exception e) {
-            System.err.println("Ошибка при сохранении " + fileType + " файла " + fileUrl + ": " + e.getMessage());
+            System.err.println("[" + LocalDateTime.now() + "] Ошибка при сохранении " + fileType + " файла " + fileUrl + ": " + e.getMessage());
         }
     }
 
@@ -201,7 +204,7 @@ public class IndexingService {
             String fileType = url.openConnection().getContentType();
             return fileType != null && (fileType.startsWith("image/") || fileType.startsWith("text/") || fileType.startsWith("application/"));
         } catch (IOException e) {
-            System.err.println("Ошибка при проверке типа медиафайла " + fileUrl + ": " + e.getMessage());
+            System.err.println("[" + LocalDateTime.now() + "] Ошибка при проверке типа медиафайла " + fileUrl + ": " + e.getMessage());
             return false;
         }
     }
