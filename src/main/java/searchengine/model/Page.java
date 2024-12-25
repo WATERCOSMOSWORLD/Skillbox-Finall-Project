@@ -29,7 +29,6 @@ public class Page {
     @Column(columnDefinition = "MEDIUMTEXT", nullable = false)
     private String content;
 
-    // Конструктор для создания объекта Page
     public Page(Site site, String path, int code, String content) {
         this.site = site;
         this.path = path;
