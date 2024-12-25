@@ -64,7 +64,12 @@ public class IndexingService {
             try {
                 Site site = convertToModelSite(configSite);
 
-                deleteSiteData(site);
+                // Удаляем старые данные и получаем количество удаленных записей
+                int deletedPages = deletePages(site);
+                int deletedSites = deleteSite(site);
+
+                // Логируем количество удаленных данных
+                System.out.println("Для сайта " + site.getUrl() + " удалено " + deletedPages + " страниц и " + deletedSites + " записей о сайте.");
 
                 site.setStatus(Status.INDEXING);
                 site.setStatusTime(LocalDateTime.now());
@@ -88,11 +93,30 @@ public class IndexingService {
         return site;
     }
 
-    private void deleteSiteData(Site site) {
+    @Transactional
+    private int deletePages(Site site) {
+        // Get the count of Pages before deletion
+        int countBeforeDelete = pageRepository.countBySiteUrl(site.getUrl());
+
+        // Perform the deletion
         pageRepository.deleteBySiteUrl(site.getUrl());
-        siteRepository.deleteByUrl(site.getUrl());
-        System.out.println("Данные для сайта " + site.getUrl() + " удалены.");
+
+        // Return the count of deleted Pages
+        return countBeforeDelete;
     }
+
+    @Transactional
+    private int deleteSite(Site site) {
+        // Get the count of Sites before deletion
+        int countBeforeDelete = siteRepository.countByUrl(site.getUrl());
+
+        // Perform the deletion
+        siteRepository.deleteByUrl(site.getUrl());
+
+        // Return the count of deleted Sites
+        return countBeforeDelete;
+    }
+
 
     private void crawlSiteAndSavePages(Site site) {
         Set<String> visitedUrls = new HashSet<>();
