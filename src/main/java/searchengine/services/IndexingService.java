@@ -79,6 +79,11 @@ public class IndexingService {
                 crawlSiteAndSavePages(site);
 
                 System.out.println("[" + LocalDateTime.now() + "] Страницы для сайта " + site.getUrl() + " добавлены в базу данных.");
+
+                site.setStatus(Status.INDEXED);
+                site.setStatusTime(LocalDateTime.now());
+                siteRepository.save(site);
+                System.out.println("[" + LocalDateTime.now() + "] Статус сайта " + site.getUrl() + " изменен на INDEXED.");
             } catch (Exception e) {
                 System.err.println("[" + LocalDateTime.now() + "] Ошибка при индексации сайта " + configSite.getUrl() + ": " + e.getMessage());
                 e.printStackTrace();
@@ -126,7 +131,6 @@ public class IndexingService {
             Document doc = Jsoup.connect(url).get();
             visitedUrls.add(url);
 
-            // Проверка типа контента (работаем только с текстовыми страницами)
             String contentType = Jsoup.connect(url).execute().contentType();
             if (contentType == null || contentType.startsWith("text/") || contentType.startsWith("application/xml") || contentType.startsWith("application/*+xml")) {
                 Page page = new Page();
@@ -135,12 +139,11 @@ public class IndexingService {
                 page.setCode(200);
                 page.setContent(doc.html());
                 pageRepository.save(page);
-                System.out.println("Страница " + url + " сохранена.");
+                System.out.println("[" + LocalDateTime.now() + "] Страница " + url + " сохранена.");
             } else {
-                System.out.println("Пропущена страница " + url + " с неподдерживаемым типом содержимого: " + contentType);
+                System.out.println("[" + LocalDateTime.now() + "] Пропущена страница " + url + " с неподдерживаемым типом содержимого.");
             }
 
-            // Обновляем статус времени после каждого обхода страницы
             updateSiteStatusTime(site);
 
             for (Element link : doc.select("a[href]")) {
@@ -153,10 +156,9 @@ public class IndexingService {
             processMediaFiles(doc, site);
 
         } catch (IOException e) {
-            System.err.println("Ошибка при обработке страницы " + url + ": " + e.getMessage());
+            System.err.println("[" + LocalDateTime.now() + "] Ошибка при обработке страницы " + url + ": " + e.getMessage());
         }
     }
-
 
     private void processMediaFiles(Document doc, Site site) {
         for (Element img : doc.select("img[src]")) {
