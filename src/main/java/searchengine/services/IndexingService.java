@@ -11,15 +11,15 @@ import searchengine.repositories.PageRepository;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import java.util.concurrent.atomic.AtomicBoolean;
+
 
 import java.io.IOException;
 import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.*;
 
 @Service
 public class IndexingService {
@@ -29,6 +29,7 @@ public class IndexingService {
     private final SitesList sitesList;
     private final SiteRepository siteRepository;
     private final PageRepository pageRepository;
+    private final ForkJoinPool forkJoinPool = new ForkJoinPool();
 
     public IndexingService(SitesList sitesList, SiteRepository siteRepository, PageRepository pageRepository) {
         this.sitesList = sitesList;
@@ -135,37 +136,46 @@ public class IndexingService {
             return;
         }
 
-        try {
-            Document doc = Jsoup.connect(url).get();
-            visitedUrls.add(url);
+        // Создаем новую задачу для обработки страницы
+        forkJoinPool.submit(new RecursiveTask<Void>() {
+            @Override
+            protected Void compute() {
+                try {
+                    Document doc = Jsoup.connect(url).get();
+                    visitedUrls.add(url);
 
-            String contentType = Jsoup.connect(url).execute().contentType();
-            if (contentType == null || contentType.startsWith("text/") || contentType.startsWith("application/xml") || contentType.startsWith("application/*+xml")) {
-                Page page = new Page();
-                page.setSite(site);
-                page.setPath(url);
-                page.setCode(200);
-                page.setContent(doc.html());
-                pageRepository.save(page);
-                System.out.println("[" + LocalDateTime.now() + "] Страница " + url + " сохранена.");
-            } else {
-                System.out.println("[" + LocalDateTime.now() + "] Пропущена страница " + url + " с неподдерживаемым типом содержимого.");
-            }
+                    String contentType = Jsoup.connect(url).execute().contentType();
+                    if (contentType == null || contentType.startsWith("text/") || contentType.startsWith("application/xml") || contentType.startsWith("application/*+xml")) {
+                        Page page = new Page();
+                        page.setSite(site);
+                        page.setPath(url);
+                        page.setCode(200);
+                        page.setContent(doc.html());
+                        pageRepository.save(page);
+                        System.out.println("[" + LocalDateTime.now() + "] Страница " + url + " сохранена.");
+                    } else {
+                        System.out.println("[" + LocalDateTime.now() + "] Пропущена страница " + url + " с неподдерживаемым типом содержимого.");
+                    }
 
-            updateSiteStatusTime(site);
+                    updateSiteStatusTime(site);
 
-            for (Element link : doc.select("a[href]")) {
-                String nextUrl = link.absUrl("href");
-                if (!nextUrl.isEmpty() && nextUrl.startsWith(site.getUrl())) {
-                    crawlPage(nextUrl, visitedUrls, site);
+                    // Обрабатываем все ссылки на текущей странице
+                    for (Element link : doc.select("a[href]")) {
+                        String nextUrl = link.absUrl("href");
+                        if (!nextUrl.isEmpty() && nextUrl.startsWith(site.getUrl())) {
+                            // Для каждой найденной ссылки создаем новую задачу
+                            crawlPage(nextUrl, visitedUrls, site);
+                        }
+                    }
+
+                    // Обрабатываем медиафайлы (изображения, CSS, JS)
+                    processMediaFiles(doc, site);
+                } catch (IOException e) {
+                    System.err.println("[" + LocalDateTime.now() + "] Ошибка при обработке страницы " + url + ": " + e.getMessage());
                 }
+                return null;
             }
-
-            processMediaFiles(doc, site);
-
-        } catch (IOException e) {
-            System.err.println("[" + LocalDateTime.now() + "] Ошибка при обработке страницы " + url + ": " + e.getMessage());
-        }
+        });
     }
 
     private void processMediaFiles(Document doc, Site site) {
