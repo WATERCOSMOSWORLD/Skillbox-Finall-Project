@@ -86,6 +86,14 @@ public class IndexingService {
                 System.out.println("[" + LocalDateTime.now() + "] Статус сайта " + site.getUrl() + " изменен на INDEXED.");
             } catch (Exception e) {
                 System.err.println("[" + LocalDateTime.now() + "] Ошибка при индексации сайта " + configSite.getUrl() + ": " + e.getMessage());
+
+                // Обновление статуса на FAILED и сохранение ошибки
+                Site site = convertToModelSite(configSite);
+                site.setStatus(Status.FAILED);
+                site.setStatusTime(LocalDateTime.now());
+                site.setLastError("Ошибка при индексации: " + e.getMessage());
+                siteRepository.save(site);
+
                 e.printStackTrace();
             }
         }

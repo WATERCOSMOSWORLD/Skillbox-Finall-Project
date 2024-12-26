@@ -26,15 +26,15 @@ public class Site {
     private LocalDateTime statusTime;
 
     @Column(name = "last_error", columnDefinition = "TEXT")
-    private String lastError;
+    private String lastError;  // Хранение информации об ошибке
 
     @Column(columnDefinition = "VARCHAR(255)", nullable = false, unique = true)
-    private String url;
+    private String url;  // Уникальный URL сайта
 
     @Column(columnDefinition = "VARCHAR(255)", nullable = false)
-    private String name;
+    private String name;  // Имя сайта
 
     @ManyToOne
     @JoinColumn(name = "parent_site_id", nullable = true)
-    private Site parentSite;
+    private Site parentSite;  // Связь с родительским сайтом (если есть)
 }
